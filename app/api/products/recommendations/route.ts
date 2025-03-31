@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-export async function GET(request) {
+export async function GET(request: { url: string | URL }) {
   try {
     const { searchParams } = new URL(request.url)
     const style = searchParams.get("style")

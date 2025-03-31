@@ -1,47 +1,87 @@
 import { NextResponse } from "next/server"
-import { createOrder, addOrderItem, getUserOrders } from "@/lib/db"
+import connectDB from "@/lib/mongodb"
+import Order from "@/lib/models/Order"
+import User from "@/lib/models/User"
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const { userId, items, totalAmount } = await req.json()
+    const body = await request.json()
+    console.log("Received order data:", body)
 
-    if (!userId || !items || !totalAmount) {
-      return NextResponse.json({ error: "User ID, items, and total amount are required" }, { status: 400 })
+    const { userId, items, total, status, user, shippingAddress, paymentMethod } = body
+
+    if (!userId || !items || !total) {
+      console.error("Missing required fields:", { userId, items, total })
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      )
     }
 
-    // Create the order
-    const order = await createOrder(userId, totalAmount)
+    console.log("Connecting to database...")
+    await connectDB()
+    console.log("Connected to database")
 
-    // Add order items
-    for (const item of items) {
-      await addOrderItem(order.id, item.productId, item.quantity, item.price)
+    // Get user information
+    console.log("Looking up user:", userId)
+    const dbUser = await User.findById(userId)
+    if (!dbUser) {
+      console.error("User not found:", userId)
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 404 }
+      )
     }
+    console.log("Found user:", dbUser._id)
 
-    return NextResponse.json({
-      message: "Order created successfully",
-      order,
-    })
+    // Create order
+    console.log("Creating order...")
+    const orderData = {
+      userId,
+      items,
+      total,
+      status: status || 'pending',
+      user: {
+        name: user?.name || dbUser.name,
+        email: user?.email || dbUser.email,
+      },
+      shippingAddress,
+      paymentMethod,
+    }
+    console.log("Order data to save:", orderData)
+
+    const order = await Order.create(orderData)
+    console.log("Order created successfully:", order._id)
+
+    return NextResponse.json(order, { status: 201 })
   } catch (error) {
     console.error("Error creating order:", error)
-    return NextResponse.json({ error: "Failed to create order" }, { status: 500 })
+    return NextResponse.json(
+      { 
+        error: "Failed to create order", 
+        details: error instanceof Error ? error.message : "Unknown error" 
+      },
+      { status: 500 }
+    )
   }
 }
 
-export async function GET(req: Request) {
+export async function GET(request: Request) {
   try {
-    const url = new URL(req.url)
-    const userId = url.searchParams.get("userId")
+    console.log("Connecting to database...")
+    await connectDB()
+    console.log("Connected to database")
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
-    }
+    const orders = await Order.find().sort({ createdAt: -1 })
+    console.log(`Found ${orders.length} orders`)
 
-    const orders = await getUserOrders(Number.parseInt(userId))
-
-    return NextResponse.json({ orders })
+    return NextResponse.json(orders)
   } catch (error) {
     console.error("Error fetching orders:", error)
-    return NextResponse.json({ error: "Failed to fetch orders" }, { status: 500 })
+    return NextResponse.json(
+      { error: "Failed to fetch orders" },
+      { status: 500 }
+    )
   }
 }
 

@@ -1,43 +1,46 @@
-import type React from "react"
+import type { Metadata } from "next"
 import "@/app/globals.css"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
-import { CartProvider } from "@/components/cart-provider"
+import { CartProvider } from "@/contexts/cart-context"
 import { Toaster } from "@/components/ui/toaster"
+import { AuthProvider } from "@/contexts/auth-context"
+import { UserProvider } from "@/contexts/UserContext"
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata = {
-  title: "Mood Shop - Personalized Shopping Based on Your Mood",
-  description: "Discover products that match your mood and enhance your wellbeing.",
-    generator: 'v0.dev'
+export const metadata: Metadata = {
+  title: "Joslin E-commerce",
+  description: "Your one-stop shop for all your needs",
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <CartProvider>
-            <div className="flex flex-col min-h-screen">
-              <Navbar />
-              <main className="flex-1">{children}</main>
-              <Footer />
-            </div>
-            <Toaster />
-          </CartProvider>
+          <UserProvider>
+            <AuthProvider>
+              <CartProvider>
+                <Navbar />
+                <main className="min-h-screen">
+                  {children}
+                </main>
+                <Footer />
+                <Toaster />
+              </CartProvider>
+            </AuthProvider>
+          </UserProvider>
         </ThemeProvider>
       </body>
     </html>
   )
 }
-
-
 
 import './globals.css'

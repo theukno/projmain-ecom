@@ -1,44 +1,55 @@
-import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { db } from "@/lib/db"
+import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { sign } from 'jsonwebtoken'
+import connectDB from '@/lib/mongodb'
+import User from '@/lib/models/User'
 
-export async function POST(request) {
+interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export async function POST(request: Request) {
   try {
-    const { email, password, otp } = await request.json()
+    const { email, password } = await request.json()
 
-    // Verify OTP
-    const isValidOtp = await db.verifyOtp(email, otp)
+    await connectDB()
+    const user = await User.findOne({ email })
 
-    if (!isValidOtp) {
-      return NextResponse.json({ error: "Invalid OTP" }, { status: 400 })
+    if (!user || user.password !== password) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      )
     }
 
-    // Authenticate user
-    const user = await db.authenticateUser(email, password)
+    const token = sign(
+      { userId: user._id, email: user.email, name: user.name },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '7d' }
+    )
 
-    if (!user) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
-    }
-
-    // Set auth cookie
-    const cookieStore = cookies()
-    cookieStore.set("auth_token", user.token, {
+    ;(await cookies()).set('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7, // 1 week
-      path: "/",
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 // 7 days
     })
 
     return NextResponse.json({
       success: true,
       user: {
-        id: user.id,
+        id: user._id,
         email: user.email,
-      },
+        name: user.name
+      }
     })
   } catch (error) {
-    console.error("Error logging in:", error)
-    return NextResponse.json({ error: "Failed to login" }, { status: 500 })
+    console.error('Login error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 

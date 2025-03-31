@@ -1,200 +1,376 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import Link from "next/link"
+import { useCart } from "@/contexts/cart-context"
+import { useAuth } from "@/contexts/auth-context"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { useToast } from "@/hooks/use-toast"
+import { Download } from "lucide-react"
+
+interface Order {
+  items: Array<{
+    id: string
+    name: string
+    price: number
+    quantity: number
+    imageUrl?: string
+  }>
+  total: number
+  user: {
+    name: string
+    email: string
+  }
+  shippingAddress: string
+  paymentMethod: string
+  createdAt: string
+}
 
 export default function CheckoutPage() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState("credit")
-  const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const { items, total, clearCart } = useCart()
+  const { user, isLoading } = useAuth()
+  const { toast } = useToast()
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [order, setOrder] = useState<Order | null>(null)
 
   useEffect(() => {
-    // Check if user is logged in
-    const checkAuthStatus = async () => {
-      try {
-        const response = await fetch("/api/auth/status")
-        const data = await response.json()
-        setIsLoggedIn(data.isLoggedIn)
-      } catch (error) {
-        console.error("Error checking auth status:", error)
-      } finally {
-        setLoading(false)
-      }
+    if (!isLoading && !user) {
+      router.push('/account?from=checkout')
     }
+    if (items.length === 0 && !order) {
+      router.push('/cart')
+    }
+  }, [user, items, router, order, isLoading])
 
-    checkAuthStatus()
-  }, [])
+  const downloadBill = () => {
+    if (!order) return
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+    const billContent = `
+Order Bill
+==========
+Date: ${new Date(order.createdAt).toLocaleDateString()}
 
+Customer Information
+------------------
+Name: ${order.user.name}
+Email: ${order.user.email}
+
+Shipping Address
+--------------
+${order.shippingAddress}
+
+Payment Method
+-------------
+${order.paymentMethod}
+
+Items
+-----
+${order.items.map(item => `${item.name} x ${item.quantity} - $${(item.price * item.quantity).toFixed(2)}`).join('\n')}
+
+Total Amount: $${order.total.toFixed(2)}
+
+Thank you for your purchase!
+    `.trim()
+
+    const blob = new Blob([billContent], { type: "text/plain" })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `bill-${new Date().toISOString()}.txt`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  }
+
+  const handlePlaceOrder = async () => {
+    if (!user || items.length === 0) return
+
+    setIsProcessing(true)
     try {
-      setLoading(true)
+      // Get form values
+      const name = (document.getElementById('name') as HTMLInputElement).value
+      const email = (document.getElementById('email') as HTMLInputElement).value
+      const address = (document.getElementById('address') as HTMLInputElement).value
+      const city = (document.getElementById('city') as HTMLInputElement).value
+      const state = (document.getElementById('state') as HTMLInputElement).value
+      const zip = (document.getElementById('zip') as HTMLInputElement).value
+      const cardNumber = (document.getElementById('card') as HTMLInputElement).value
+      const expiry = (document.getElementById('expiry') as HTMLInputElement).value
+      const cvc = (document.getElementById('cvc') as HTMLInputElement).value
 
-      // Process payment
-      const paymentResponse = await fetch("/api/orders", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      // Validate required fields with specific messages
+      const missingFields = []
+      if (!name) missingFields.push('Name')
+      if (!email) missingFields.push('Email')
+      if (!address) missingFields.push('Address')
+      if (!city) missingFields.push('City')
+      if (!state) missingFields.push('State')
+      if (!zip) missingFields.push('ZIP Code')
+      if (!cardNumber) missingFields.push('Card Number')
+      if (!expiry) missingFields.push('Expiry Date')
+      if (!cvc) missingFields.push('CVC')
+
+      if (missingFields.length > 0) {
+        toast({
+          title: "Missing Required Fields",
+          description: `Please fill in the following fields: ${missingFields.join(', ')}`,
+          variant: "destructive",
+        })
+        return
+      }
+
+      const shippingAddress = `${address}, ${city}, ${state} ${zip}`
+      const paymentMethod = `Card ending in ${cardNumber.slice(-4)}`
+
+      // Validate required data
+      if (!user.id) {
+        console.error('User ID is missing')
+        throw new Error('Please log in to place an order')
+      }
+      if (!items || items.length === 0) {
+        throw new Error('Cart is empty')
+      }
+      if (!total || total <= 0) {
+        throw new Error('Invalid total amount')
+      }
+
+      const orderData = {
+        userId: user.id,
+        items: items.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          imageUrl: item.imageUrl
+        })),
+        total,
+        status: 'pending',
+        user: {
+          name,
+          email,
         },
-        body: JSON.stringify({
-          paymentMethod,
-          // Add other order details
-        }),
+        shippingAddress,
+        paymentMethod,
+      }
+
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(orderData),
       })
 
-      if (!paymentResponse.ok) {
-        throw new Error("Payment failed")
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create order')
       }
 
-      const orderData = await paymentResponse.json()
+      clearCart()
+      
+      toast({
+        title: "Order Placed!",
+        description: "Your order has been successfully placed.",
+      })
 
-      // Redirect to confirmation page with order ID
-      router.push(`/checkout/confirmation?orderId=${orderData.orderId}`)
+      window.location.href = `/checkout?id=${data._id}`
     } catch (error) {
-      console.error("Checkout error:", error)
-      alert("There was an error processing your payment. Please try again.")
+      console.error('Order creation error:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to place order. Please try again.",
+        variant: "destructive",
+      })
     } finally {
-      setLoading(false)
+      setIsProcessing(false)
     }
   }
 
-  // Show loading state
-  if (loading && !isLoggedIn) {
-    return <div className="container mx-auto p-4">Loading...</div>
-  }
-
-  // If not logged in, redirect to login
-  if (!loading && !isLoggedIn) {
+  if (isLoading) {
     return (
-      <div className="container mx-auto p-4 max-w-md">
-        <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-md mb-6">
-          <h2 className="text-lg font-semibold mb-2">Please sign in to continue</h2>
-          <p className="mb-4">You need to be signed in to complete your purchase.</p>
-          <Link
-            href="/account?redirect=checkout"
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            Sign In
-          </Link>
+      <div className="container max-w-4xl mx-auto py-12 px-4">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold mb-4">Loading...</h1>
+          <p className="text-muted-foreground">Please wait while we verify your authentication.</p>
         </div>
       </div>
     )
   }
 
+  if (!user || (items.length === 0 && !order)) {
+    return null
+  }
+
+  if (order) {
+    return (
+      <div className="container max-w-4xl mx-auto py-12 px-4">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">Order Confirmation</h1>
+          <p className="text-muted-foreground">Thank you for your purchase!</p>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Order Bill</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <p><strong>Date:</strong> {new Date(order.createdAt).toLocaleDateString()}</p>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-semibold">Customer Information</h3>
+              <p><strong>Name:</strong> {order.user.name}</p>
+              <p><strong>Email:</strong> {order.user.email}</p>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-semibold">Shipping Address</h3>
+              <p>{order.shippingAddress}</p>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-semibold">Payment Method</h3>
+              <p>{order.paymentMethod}</p>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-semibold">Items</h3>
+              {order.items.map((item) => (
+                <div key={item.id} className="flex justify-between">
+                  <span>{item.name} x {item.quantity}</span>
+                  <span>${(item.price * item.quantity).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t pt-4">
+              <div className="flex justify-between font-medium text-lg">
+                <span>Total Amount</span>
+                <span>${order.total.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <Button onClick={downloadBill} className="w-full">
+              <Download className="mr-2 h-4 w-4" />
+              Download Bill
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
-    <div className="container mx-auto p-4 max-w-4xl">
-      <h1 className="text-2xl font-bold mb-6">Checkout</h1>
+    <div className="container max-w-4xl mx-auto py-12 px-4">
+      <h1 className="text-3xl font-bold mb-6">Checkout</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div>
-          <h2 className="text-xl font-semibold mb-4">Shipping Information</h2>
-          <form onSubmit={handleSubmit}>
-            {/* Shipping form fields */}
-            <div className="mb-4">
-              <label className="block mb-1">Full Name</label>
-              <input type="text" className="w-full border rounded p-2" required />
-            </div>
-
-            <div className="mb-4">
-              <label className="block mb-1">Address</label>
-              <input type="text" className="w-full border rounded p-2" required />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block mb-1">City</label>
-                <input type="text" className="w-full border rounded p-2" required />
+      <div className="grid gap-8 md:grid-cols-2">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Shipping Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input id="name" defaultValue={user.name} />
               </div>
-              <div>
-                <label className="block mb-1">Postal Code</label>
-                <input type="text" className="w-full border rounded p-2" required />
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" defaultValue={user.email} />
               </div>
-            </div>
+              <div className="grid gap-2">
+                <Label htmlFor="address">Address</Label>
+                <Input id="address" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="city">City</Label>
+                <Input id="city" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="state">State</Label>
+                <Input id="state" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="zip">ZIP Code</Label>
+                <Input id="zip" required />
+              </div>
+            </CardContent>
+          </Card>
 
-            <h2 className="text-xl font-semibold mb-4 mt-8">Payment Method</h2>
-            <div className="mb-6">
-              <div className="flex items-center mb-2">
-                <input
-                  type="radio"
-                  id="credit"
-                  name="paymentMethod"
-                  value="credit"
-                  checked={paymentMethod === "credit"}
-                  onChange={() => setPaymentMethod("credit")}
-                  className="mr-2"
-                />
-                <label htmlFor="credit">Credit Card</label>
+          <Card>
+            <CardHeader>
+              <CardTitle>Payment Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="card">Card Number</Label>
+                <Input id="card" placeholder="1234 5678 9012 3456" required />
               </div>
-              <div className="flex items-center mb-2">
-                <input
-                  type="radio"
-                  id="paypal"
-                  name="paymentMethod"
-                  value="paypal"
-                  checked={paymentMethod === "paypal"}
-                  onChange={() => setPaymentMethod("paypal")}
-                  className="mr-2"
-                />
-                <label htmlFor="paypal">PayPal</label>
-              </div>
-            </div>
-
-            {paymentMethod === "credit" && (
-              <div className="mb-6">
-                <div className="mb-4">
-                  <label className="block mb-1">Card Number</label>
-                  <input type="text" className="w-full border rounded p-2" placeholder="1234 5678 9012 3456" required />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="expiry">Expiry Date</Label>
+                  <Input id="expiry" placeholder="MM/YY" required />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block mb-1">Expiration Date</label>
-                    <input type="text" className="w-full border rounded p-2" placeholder="MM/YY" required />
-                  </div>
-                  <div>
-                    <label className="block mb-1">CVV</label>
-                    <input type="text" className="w-full border rounded p-2" placeholder="123" required />
-                  </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="cvc">CVC</Label>
+                  <Input id="cvc" placeholder="123" required />
                 </div>
               </div>
-            )}
-
-            <button
-              type="submit"
-              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 w-full"
-              disabled={loading}
-            >
-              {loading ? "Processing..." : "Complete Purchase"}
-            </button>
-          </form>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="bg-gray-50 p-6 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Order Summary</h2>
-          {/* Order summary content */}
-          <div className="border-b pb-4 mb-4">
-            <div className="flex justify-between mb-2">
-              <span>Subtotal</span>
-              <span>$99.97</span>
-            </div>
-            <div className="flex justify-between mb-2">
-              <span>Shipping</span>
-              <span>$4.99</span>
-            </div>
-            <div className="flex justify-between mb-2">
-              <span>Tax</span>
-              <span>$8.50</span>
-            </div>
-          </div>
-          <div className="flex justify-between font-bold">
-            <span>Total</span>
-            <span>$113.46</span>
-          </div>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Order Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {items.map((item) => (
+                <div key={item.id} className="flex justify-between">
+                  <div>
+                    <p className="font-medium">{item.name}</p>
+                    <p className="text-sm text-muted-foreground">Quantity: {item.quantity}</p>
+                  </div>
+                  <p>${((item.price || 0) * item.quantity).toFixed(2)}</p>
+                </div>
+              ))}
+              <div className="border-t pt-4">
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>${total.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Shipping</span>
+                  <span>Free</span>
+                </div>
+                <div className="flex justify-between font-medium text-lg">
+                  <span>Total</span>
+                  <span>${total.toFixed(2)}</span>
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button 
+                className="w-full" 
+                onClick={handlePlaceOrder}
+                disabled={isProcessing}
+              >
+                {isProcessing ? "Processing..." : "Place Order"}
+              </Button>
+            </CardFooter>
+          </Card>
         </div>
       </div>
     </div>
   )
 }
+
 

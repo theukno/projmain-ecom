@@ -5,8 +5,20 @@ import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 
+interface Product {
+  _id: string
+  name: string
+  description: string
+  price: number
+  imageUrl: string
+  category: string
+  moodId?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export default function ProductsPage() {
-  const [products, setProducts] = useState([])
+  const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
@@ -39,13 +51,13 @@ export default function ProductsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {products.map((product) => (
           <div
-            key={product.id}
+            key={product._id}
             className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow"
           >
             <div className="relative h-64 w-full">
-              {product.image ? (
+              {product.imageUrl ? (
                 <Image
-                  src={product.image || "/placeholder.svg"}
+                  src={product.imageUrl}
                   alt={product.name}
                   fill
                   className="object-cover"
@@ -62,7 +74,7 @@ export default function ProductsPage() {
               <h2 className="text-lg font-semibold">{product.name}</h2>
               <p className="text-gray-600 mb-2">${product.price}</p>
               <p className="text-sm text-gray-500 mb-4">{product.description}</p>
-              <Link href={`/products/${product.id}`} className="text-blue-600 hover:text-blue-800 font-medium">
+              <Link href={`/products/${product._id}`} className="text-blue-600 hover:text-blue-800 font-medium">
                 View Details
               </Link>
             </div>

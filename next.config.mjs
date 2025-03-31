@@ -14,6 +14,7 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
+    domains: ['images.unsplash.com', 'placehold.co', 'picsum.photos'],
     unoptimized: true,
   },
   experimental: {

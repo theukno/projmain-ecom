@@ -8,12 +8,12 @@ import { ShoppingCart, User, Menu, X, Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
-import { useCart } from "@/components/cart-provider"
+import { useCart } from "@/contexts/cart-context"
 
 export function Navbar() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
-  const { cartItems } = useCart()
+  const { items } = useCart()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   const routes = [
@@ -23,7 +23,7 @@ export function Navbar() {
     { href: "/about", label: "About" },
   ]
 
-  const cartItemCount = cartItems.reduce((total, item) => total + item.quantity, 0)
+  const cartItemCount = items.reduce((total: number, item: { quantity: number }) => total + item.quantity, 0)
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background">
@@ -73,15 +73,15 @@ export function Navbar() {
               <span className="sr-only">Account</span>
             </Button>
           </Link>
-          <Sheet open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-            <SheetTrigger asChild className="md:hidden">
-              <Button variant="ghost" size="icon">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden">
                 {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
                 <span className="sr-only">Toggle menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="right">
-              <nav className="flex flex-col gap-4 mt-8">
+            <SheetContent side="right" {...({} as any)}>
+              <div className="flex flex-col gap-4 mt-8">
                 {routes.map((route) => (
                   <Link
                     key={route.href}
@@ -94,7 +94,7 @@ export function Navbar() {
                     {route.label}
                   </Link>
                 ))}
-              </nav>
+              </div>
             </SheetContent>
           </Sheet>
         </div>
