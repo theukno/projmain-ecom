@@ -12,7 +12,7 @@ import { UserProvider } from "@/contexts/UserContext"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Joslin E-commerce",
+  title: "Mind-Shop",
   description: "Your one-stop shop for all your needs",
 }
 

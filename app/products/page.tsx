@@ -4,6 +4,10 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { ShoppingCart } from "lucide-react"
+import { useCart } from "@/contexts/cart-context"
+import { useToast } from "@/hooks/use-toast"
 
 interface Product {
   _id: string
@@ -21,6 +25,8 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const { addItem } = useCart()
+  const { toast } = useToast()
 
   useEffect(() => {
     async function fetchProducts() {
@@ -40,6 +46,29 @@ export default function ProductsPage() {
 
     fetchProducts()
   }, [])
+
+  const handleAddToCart = (product: Product) => {
+    try {
+      addItem({
+        id: product._id,
+        name: product.name,
+        price: product.price,
+        quantity: 1,
+        imageUrl: product.imageUrl,
+      })
+      toast({
+        title: "Added to Cart",
+        description: `${product.name} has been added to your cart.`,
+      })
+    } catch (error) {
+      console.error("Error adding to cart:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add product to cart. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
 
   if (loading) {
     return <div className="container mx-auto p-4">Loading products...</div>
@@ -72,11 +101,17 @@ export default function ProductsPage() {
             </div>
             <div className="p-4">
               <h2 className="text-lg font-semibold">{product.name}</h2>
-              <p className="text-gray-600 mb-2">${product.price}</p>
+              <p className="text-gray-600 mb-2">${product.price.toFixed(2)}</p>
               <p className="text-sm text-gray-500 mb-4">{product.description}</p>
-              <Link href={`/products/${product._id}`} className="text-blue-600 hover:text-blue-800 font-medium">
-                View Details
-              </Link>
+              <div className="flex space-x-2">
+                <Button onClick={() => handleAddToCart(product)}>
+                  <ShoppingCart className="mr-2 h-4 w-4" />
+                  Add to Cart
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link href={`/products/${product._id}`}>View Details</Link>
+                </Button>
+              </div>
             </div>
           </div>
         ))}

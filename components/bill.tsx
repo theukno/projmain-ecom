@@ -49,9 +49,10 @@ export function Bill() {
       
       const response = await fetch(`/api/orders/${id}`)
       console.log("Response status:", response.status)
+      console.log("Response headers:", Object.fromEntries(response.headers.entries()))
       
       const data = await response.json()
-      console.log("Response data:", data)
+      console.log("Response data:", JSON.stringify(data, null, 2))
       
       if (!response.ok) {
         console.error("Error response:", data)
@@ -63,7 +64,7 @@ export function Bill() {
         throw new Error("No order data received")
       }
       
-      console.log("Setting order data:", data)
+      console.log("Setting order data:", JSON.stringify(data, null, 2))
       setOrder(data)
     } catch (error) {
       console.error("Error fetching order:", error)

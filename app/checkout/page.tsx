@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useCart } from "@/contexts/cart-context"
 import { useAuth } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Download } from "lucide-react"
+import { Bill } from "@/components/bill"
 
 interface Order {
   items: Array<{
@@ -29,13 +30,14 @@ interface Order {
   createdAt: string
 }
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter()
   const { items, total, clearCart } = useCart()
   const { user, isLoading } = useAuth()
   const { toast } = useToast()
   const [isProcessing, setIsProcessing] = useState(false)
   const [order, setOrder] = useState<Order | null>(null)
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -45,6 +47,31 @@ export default function CheckoutPage() {
       router.push('/cart')
     }
   }, [user, items, router, order, isLoading])
+
+  useEffect(() => {
+    const orderId = searchParams.get('id')
+    if (orderId) {
+      fetchOrder(orderId)
+    }
+  }, [searchParams])
+
+  const fetchOrder = async (orderId: string) => {
+    try {
+      const response = await fetch(`/api/orders/${orderId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch order')
+      }
+      const data = await response.json()
+      setOrder(data)
+    } catch (error) {
+      console.error('Error fetching order:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load order details",
+        variant: "destructive",
+      })
+    }
+  }
 
   const downloadBill = () => {
     if (!order) return
@@ -214,54 +241,7 @@ Thank you for your purchase!
           <h1 className="text-3xl font-bold mb-2">Order Confirmation</h1>
           <p className="text-muted-foreground">Thank you for your purchase!</p>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Order Bill</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <p><strong>Date:</strong> {new Date(order.createdAt).toLocaleDateString()}</p>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold">Customer Information</h3>
-              <p><strong>Name:</strong> {order.user.name}</p>
-              <p><strong>Email:</strong> {order.user.email}</p>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold">Shipping Address</h3>
-              <p>{order.shippingAddress}</p>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold">Payment Method</h3>
-              <p>{order.paymentMethod}</p>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold">Items</h3>
-              {order.items.map((item) => (
-                <div key={item.id} className="flex justify-between">
-                  <span>{item.name} x {item.quantity}</span>
-                  <span>${(item.price * item.quantity).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t pt-4">
-              <div className="flex justify-between font-medium text-lg">
-                <span>Total Amount</span>
-                <span>${order.total.toFixed(2)}</span>
-              </div>
-            </div>
-
-            <Button onClick={downloadBill} className="w-full">
-              <Download className="mr-2 h-4 w-4" />
-              Download Bill
-            </Button>
-          </CardContent>
-        </Card>
+        <Bill />
       </div>
     )
   }
@@ -370,6 +350,21 @@ Thank you for your purchase!
         </div>
       </div>
     </div>
+  )
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={
+      <div className="container max-w-4xl mx-auto py-12 px-4">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold mb-4">Loading...</h1>
+          <p className="text-muted-foreground">Please wait while we load your checkout page.</p>
+        </div>
+      </div>
+    }>
+      <CheckoutContent />
+    </Suspense>
   )
 }
 
